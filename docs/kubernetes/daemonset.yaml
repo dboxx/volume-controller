@@ -1,0 +1,208 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: volume-controller 
+  namespace: default
+  labels:
+    app: volume-controller
+spec:
+  selector:
+    matchLabels:
+      app: volume-controller
+  template:
+    metadata:
+      labels:
+        app: volume-controller
+    spec:
+      restartPolicy: "Always"
+      terminationGracePeriodSeconds: 3
+      initContainers:
+      - name: gluster-setup
+        image: dboxx/volume-controller:v0.1
+        imagePullPolicy: IfNotPresent
+        command:
+          - /usr/local/sbin/gluster-setup.sh
+        env:
+        - name: GLUSTER_BLOCKD_STATUS_PROBE_ENABLE
+          value: "0"
+        - name: GB_GLFS_LRU_COUNT
+          value: "15"
+        - name: TCMU_LOGDIR
+          value: "/var/log/glusterfs/gluster-block"
+        - name: GLUSTERFS_CUSTOM_FSTAB
+          value: "/var/lib/heketi/fstab"
+        volumeMounts:
+        - name: run
+          mountPath: "/run"
+          readOnly: false
+        - name: dev
+          mountPath: "/dev"
+          readOnly: false
+        - name: tmp
+          mountPath: "/tmp"
+          readOnly: false
+        - name: glusterfs-conf-dir # GLUSTERFS_CONF_DIR="/etc/glusterfs"
+          mountPath: "/etc/glusterfs"
+          readOnly: false
+        - name: glusterfs-log-dir # GLUSTERFS_LOG_DIR="/var/log/glusterfs"
+          mountPath: "/var/log/glusterfs"
+          readOnly: false
+        - name: glusterfs-meta-dir # GLUSTERFS_META_DIR="/var/lib/glusterd"
+          mountPath: "/var/lib/glusterd"
+          readOnly: false
+        - name: glusterfs-misc
+          mountPath: "/var/lib/misc/glusterfsd"
+          readOnly: false
+        - name: heketi-lib
+          mountPath: "/var/lib/heketi"
+          readOnly: false
+        - name: glusterfs-lvm
+          mountPath: "/run/lvm"
+          readOnly: false
+        - name: glusterfs-udev
+          mountPath: "/run/udev"
+          readOnly: false
+        - name: sysfscgroup
+          mountPath: "/sys/fs/cgroup"
+          readOnly: false
+        - name: kernel-modules
+          mountPath: "/lib/modules"
+          readOnly: true
+      containers:
+      - name: volume-controller
+        image: dboxx/volume-controller:v0.1
+        imagePullPolicy: IfNotPresent
+        command:
+          - /usr/local/sbin/volume-controller
+        ports:
+        - name: http
+          containerPort: 80
+        - name: https
+          containerPort: 443
+        livenessProbe:
+          httpGet:
+            port: 80
+            path: /v1/status
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            port: 80
+            path: /v1/status
+          initialDelaySeconds: 140
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+      - name: glusterd
+        image: dboxx/volume-controller:v0.1
+        imagePullPolicy: IfNotPresent
+        command:
+          - /usr/sbin/glusterd
+          - -p /run/glusterd.pid
+          - --log-level INFO
+        securityContext:
+          privileged: True
+        env:
+        - name: GLUSTER_BLOCKD_STATUS_PROBE_ENABLE
+          value: "0"
+        - name: GB_GLFS_LRU_COUNT
+          value: "15"
+        - name: TCMU_LOGDIR
+          value: "/var/log/glusterfs/gluster-block"
+        - name: GLUSTERFS_CUSTOM_FSTAB
+          value: "/var/lib/heketi/fstab"
+        volumeMounts:
+        - name: run
+          mountPath: "/run"
+          readOnly: false
+        - name: dev
+          mountPath: "/dev"
+          readOnly: false
+        - name: tmp
+          mountPath: "/tmp"
+          readOnly: false
+        - name: glusterfs-conf-dir # GLUSTERFS_CONF_DIR="/etc/glusterfs"
+          mountPath: "/etc/glusterfs"
+          readOnly: false
+        - name: glusterfs-log-dir # GLUSTERFS_LOG_DIR="/var/log/glusterfs"
+          mountPath: "/var/log/glusterfs"
+          readOnly: false
+        - name: glusterfs-meta-dir # GLUSTERFS_META_DIR="/var/lib/glusterd"
+          mountPath: "/var/lib/glusterd"
+          readOnly: false
+        - name: glusterfs-misc
+          mountPath: "/var/lib/misc/glusterfsd"
+          readOnly: false
+        - name: heketi-lib
+          mountPath: "/var/lib/heketi"
+          readOnly: false
+        - name: glusterfs-lvm
+          mountPath: "/run/lvm"
+          readOnly: false
+        - name: glusterfs-udev
+          mountPath: "/run/udev"
+          readOnly: false
+        - name: sysfscgroup
+          mountPath: "/sys/fs/cgroup"
+          readOnly: false
+        - name: kernel-modules
+          mountPath: "/lib/modules"
+          readOnly: true
+      volumes:
+      - name: run
+        emptyDir:
+          medium: Memory
+      - name: dev
+        hostPath:
+          path: "/dev"
+      - name: tmp
+        emptyDir:
+          medium: Memory
+      - name: glusterfs-conf-dir # GLUSTERFS_CONF_DIR="/etc/glusterfs"
+        hostPath:
+          path: "/etc/glusterfs"
+      - name: glusterfs-log-dir # GLUSTERFS_LOG_DIR="/var/log/glusterfs"
+        hostPath:
+          path: "/var/log/glusterfs"
+      - name: glusterfs-meta-dir # GLUSTERFS_META_DIR="/var/lib/glusterd"
+        hostPath:
+          path: "/var/lib/glusterd"
+      - name: glusterfs-misc
+        hostPath:
+          path: "/var/lib/misc/glusterfsd"
+      - name: heketi-lib
+        hostPath:
+          path: "/var/lib/heketi"
+      - name: glusterfs-lvm
+        hostPath:
+          path: "/run/lvm"
+      - name: glusterfs-udev
+        hostPath:
+          path: "/run/udev"
+      - name: sysfscgroup
+        hostPath:
+          path: "/sys/fs/cgroup"
+      - name: kernel-modules
+        hostPath:
+          path: "/lib/modules"
